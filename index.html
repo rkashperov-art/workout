@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Дневник тренировок</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#0a0a0a;color:#fff;font-family:'Space Mono',monospace;overscroll-behavior:none}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.3)}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:#222;border-radius:3px}
+
+.page{min-height:100vh;padding-bottom:80px}
+.container{max-width:500px;margin:0 auto;padding:16px 14px 0}
+
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+.title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.5px}
+.subtitle{font-size:10px;color:#383838;margin-top:2px;letter-spacing:.5px}
+.hist-btn{background:#111;border:1px solid #1e1e1e;border-radius:8px;color:#444;cursor:pointer;padding:6px 12px;font-size:11px;font-family:'Space Mono',monospace}
+
+.date-input{width:100%;padding:8px 12px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:9px;color:#666;font-size:13px;font-family:'Space Mono',monospace;margin-bottom:12px;outline:none}
+
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:16px}
+.tab{padding:8px 2px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:9px;color:#404040;font-weight:700;font-size:10px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .12s;text-align:center;line-height:1.3}
+.tab-sub{font-size:8px;font-weight:400;opacity:.8;margin-top:1px}
+
+.stats-bar{display:flex;gap:8px;margin-bottom:14px;background:#0f0f0f;border-radius:10px;padding:9px 12px;border:1px solid #191919}
+.stat{flex:1;text-align:center}
+.stat-label{font-size:9px;color:#383838;margin-bottom:2px;letter-spacing:1px}
+.stat-val{font-size:13px;font-weight:700;font-family:'Space Mono',monospace}
+.sdiv{width:1px;background:#191919}
+
+.group-title{font-size:10px;letter-spacing:2px;font-weight:700;margin-bottom:8px;font-family:'Syne',sans-serif}
+.group-hint{color:#2e2e2e;font-weight:400;letter-spacing:.5px;margin-left:6px}
+.group-wrap{margin-bottom:20px}
+
+.ex-card{margin-bottom:8px;border-radius:10px;border:1px solid #1a1a1a;background:#0d0d0d;overflow:hidden;transition:border-color .15s}
+.ex-card.on{background:#111;border-color:#252525}
+.ex-header{display:flex;align-items:center;padding:10px 12px;gap:9px}
+.ex-check{width:17px;height:17px;border-radius:4px;flex-shrink:0;border:1.5px solid #252525;display:flex;align-items:center;justify-content:center;transition:all .12s;font-size:10px;font-weight:900;color:#000}
+.ex-name{font-size:12px;font-weight:600;font-family:'Syne',sans-serif;color:#3a3a3a;transition:color .12s;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ex-card.on .ex-name{color:#ddd}
+.ex-dw{color:#2a2a2a;font-size:10px;font-weight:400;margin-left:4px}
+.ex-prev{font-size:10px;color:#3a3a3a;margin-top:1px}
+.ex-body{padding:0 12px 10px}
+
+.set-row{display:flex;gap:5px;align-items:center;margin-bottom:5px}
+.set-num{font-size:10px;font-weight:700;width:14px;text-align:right;opacity:.6}
+.si{width:55px;padding:5px 5px;background:#141414;border:1px solid #252525;border-radius:7px;color:#ddd;font-size:13px;text-align:center;font-family:'Space Mono',monospace;outline:none}
+.si:focus{border-color:#444}
+.sx{color:#333;font-size:10px}
+.si2{width:48px}
+.sdel{background:none;border:none;color:#252525;cursor:pointer;font-size:12px;padding:0 2px}
+.add-btn{background:transparent;border:1px dashed #222;border-radius:6px;color:#333;cursor:pointer;font-size:11px;padding:5px;margin-top:2px;font-family:'Space Mono',monospace;width:100%;transition:all .1s}
+
+.cardio-wrap{padding:6px 0}
+.c-label{font-size:10px;color:#555;margin-bottom:7px;letter-spacing:1px}
+.machine-grid{display:flex;gap:8px;margin-bottom:18px}
+.m-btn{flex:1;padding:10px;background:#111;border:1px solid #1e1e1e;border-radius:9px;color:#555;font-weight:600;font-size:12px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .12s}
+.min-input{width:100%;padding:14px;background:#111;border:1px solid #1e1e1e;border-radius:10px;font-size:30px;font-weight:700;text-align:center;font-family:'Space Mono',monospace;outline:none}
+.c-goal{font-size:10px;color:#2a2a2a;margin-top:7px;text-align:center}
+
+.save-bar{position:fixed;bottom:0;left:0;right:0;padding:10px 14px 12px;background:linear-gradient(to top,#0a0a0a 60%,transparent)}
+.save-inner{max-width:500px;margin:0 auto}
+.save-btn{width:100%;padding:13px;border:none;border-radius:11px;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;cursor:pointer;transition:all .18s;letter-spacing:2px}
+
+.hist-head-row{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.hist-entry{background:#111;border-radius:10px;padding:11px 13px;margin-bottom:8px;border:1px solid #1e1e1e}
+.h-top{display:flex;justify-content:space-between;margin-bottom:6px}
+.h-wt{font-weight:700;font-size:12px}
+.h-date{color:#444;font-size:11px;margin-left:8px}
+.h-vol{color:#444;font-size:11px}
+.h-ex{font-size:10px;color:#333;margin-bottom:2px}
+.h-ex span{color:#484848}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const tg = window.Telegram?.WebApp;
+if(tg){ tg.ready(); tg.expand(); }
+
+// ── ПРОГРАММА ──────────────────────────────────────
+const W = {
+  back_chest:{label:"Спина + Грудь",short:"СГ",sub:"Сп+Гр",color:"#e8ff47",groups:[
+    {id:"back",name:"СПИНА",rot:true,ex:[
+      {id:"pullup",    name:"Подтягивания",            dw:null},
+      {id:"db_row",    name:"Тяга гантели в наклоне",  dw:50},
+      {id:"tbar",      name:"Тяга Т-грифа",            dw:65},
+      {id:"cable_h",   name:"Тяга гориз. блока",       dw:60},
+      {id:"cable_v",   name:"Тяга верт. блока",        dw:80},
+      {id:"cable_v2",  name:"Тяга верт. блока узкий",  dw:60},
+      {id:"hammer_row",name:"Тяга в хаммере",          dw:85},
+    ]},
+    {id:"chest",name:"ГРУДЬ",rot:true,ex:[
+      {id:"inc_db",   name:"Жим наклон. гантели",      dw:38},
+      {id:"inc_smith",name:"Жим наклон. (Смит)",       dw:65},
+      {id:"cable_fly",name:"Сведение в блоках",        dw:16},
+      {id:"chest_m",  name:"Жим в тренажёре",          dw:45},
+    ]},
+  ]},
+  delt_arms:{label:"Дельты + Руки",short:"ДР",sub:"Дл+Рк",color:"#47d4ff",groups:[
+    {id:"delt",name:"ДЕЛЬТЫ",rot:true,ex:[
+      {id:"db_press",   name:"Жим гантелей сидя",      dw:30},
+      {id:"smith_press",name:"Жим штанги (Смит)",      dw:57.5},
+      {id:"cable_lat",  name:"Отведение в блоке",      dw:10},
+      {id:"pyramid_lat",name:"Пирамида гантели 8→14",  dw:null},
+      {id:"rear_delt",  name:"Задн. дельта бабочка",   dw:60},
+    ]},
+    {id:"arms",name:"БИЦЕПС · ТРИЦЕПС",rot:false,ex:[
+      {id:"inc_curl",   name:"Бицепс на наклонной",    dw:16},
+      {id:"scott",      name:"Бицепс в скотте",        dw:60},
+      {id:"fr_press",   name:"Французский жим",        dw:16},
+      {id:"tri_block",  name:"Трицепс в блоке",        dw:32},
+      {id:"seated_curl",name:"Бицепс сидя к себе",     dw:14},
+    ]},
+  ]},
+  legs:{label:"Ноги",short:"НГ",sub:"Ноги",color:"#ff6b47",groups:[
+    {id:"legs",name:"НОГИ",rot:false,ex:[
+      {id:"lunge",   name:"Выпады",         dw:22.5},
+      {id:"goblet",  name:"Присед с гирей", dw:20},
+      {id:"rdl",     name:"Румынская тяга", dw:90},
+      {id:"hack",    name:"Гакк-присед",    dw:85},
+      {id:"leg_ext", name:"Разгибание ног", dw:60},
+      {id:"leg_curl",name:"Сгибание ног",   dw:46},
+    ]},
+  ]},
+  cardio:{label:"Кардио",short:"КД",sub:"Кардио",color:"#b47fff",groups:[]},
+};
+
+const ALL_EX = Object.values(W).flatMap(w=>w.groups).flatMap(g=>g.ex||[]);
+const findEx = id => ALL_EX.find(e=>e.id===id);
+
+// ── STORAGE ────────────────────────────────────────
+const DB={
+  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch{return null}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}},
+  keys(p){try{return Object.keys(localStorage).filter(k=>k.startsWith(p))}catch{return[]}},
+};
+
+// ── STATE ──────────────────────────────────────────
+const S={
+  view:"main", wType:"back_chest",
+  date:new Date().toISOString().slice(0,10),
+  session:{}, enabled:{}, prevSession:{}, saved:false,
+};
+
+function sKey(){return`wd3:${S.date}:${S.wType}`}
+
+function load(){
+  const cur=DB.get(sKey());
+  if(cur){S.session=cur.session||{};S.enabled=cur.enabled||{};}
+  else{S.session={};S.enabled={};}
+  const prev=DB.keys("wd3:").filter(k=>k.includes(`:${S.wType}`)&&k!==sKey()).sort().reverse();
+  S.prevSession = prev.length ? (DB.get(prev[0])?.session||{}) : {};
+}
+
+function save(){
+  DB.set(sKey(),{session:S.session,enabled:S.enabled});
+  S.saved=true; render();
+  setTimeout(()=>{S.saved=false;render();},2000);
+}
+
+// ── RENDER ─────────────────────────────────────────
+function render(){
+  document.getElementById("app").innerHTML = S.view==="hist" ? rHist() : rMain();
+  bind();
+}
+
+function rMain(){
+  const w=W[S.wType], ac=w.color;
+  let vol=0;
+  if(S.wType!=="cardio") w.groups.forEach(g=>g.ex.forEach(e=>{
+    if(g.rot&&!S.enabled[e.id]) return;
+    (S.session[e.id]?.sets||[]).forEach(s=>{vol+=(parseFloat(s.w)||0)*(parseInt(s.r)||0);});
+  }));
+  const prevHas=Object.keys(S.prevSession).length>0;
+  return`<div class="page"><div class="container">
+<div class="header">
+  <div><div class="title">ДНЕВНИК</div><div class="subtitle">ТРТ · силовые · кардио</div></div>
+  <button class="hist-btn" id="bh">История</button>
+</div>
+<input type="date" class="date-input" id="di" value="${S.date}"/>
+<div class="tabs">${Object.entries(W).map(([k,ww])=>`
+  <button class="tab" data-wt="${k}"
+    style="${S.wType===k?`background:${ww.color};border-color:${ww.color};color:#000`:''}">
+    ${ww.short}<div class="tab-sub">${ww.sub}</div>
+  </button>`).join("")}</div>
+${S.wType!=="cardio"?`<div class="stats-bar">
+  <div class="stat"><div class="stat-label">ТОННАЖ</div>
+    <div class="stat-val" style="color:${vol>0?ac:'#2a2a2a'}">${vol>0?vol+' кг':'—'}</div></div>
+  <div class="sdiv"></div>
+  <div class="stat"><div class="stat-label">ПРОШЛ.</div>
+    <div class="stat-val" style="color:${prevHas?'#555':'#252525'}">${prevHas?'есть ✓':'нет'}</div></div>
+</div>`:''}
+${S.wType==="cardio"?rCardio(ac):w.groups.map(g=>rGroup(g,ac)).join("")}
+</div>
+<div class="save-bar"><div class="save-inner">
+  <button class="save-btn" id="bs"
+    style="background:${S.saved?'#0f1f0f':ac};color:${S.saved?'#4caf50':'#000'}">
+    ${S.saved?"✓ СОХРАНЕНО":"СОХРАНИТЬ"}
+  </button>
+</div></div><div style="height:70px"></div></div>`;
+}
+
+function rGroup(g,ac){
+  return`<div class="group-wrap">
+  <div class="group-title" style="color:${ac}">${g.name}${g.rot?`<span class="group-hint">· выбери упражнения</span>`:""}</div>
+  ${g.ex.map(e=>rEx(e,g.rot,ac)).join("")}
+</div>`;
+}
+
+function rEx(ex,rot,ac){
+  const on=rot?!!S.enabled[ex.id]:true;
+  const sets=S.session[ex.id]?.sets||[];
+  const prev=(S.prevSession[ex.id]?.sets||[]);
+  const prevT=prev.length?prev.map(s=>`${s.w||"—"}×${s.r}`).join("  "):null;
+  return`<div class="ex-card${on?" on":""}">
+  <div class="ex-header"${rot?` data-tg="${ex.id}" style="cursor:pointer"`:""}>
+    ${rot?`<div class="ex-check" style="${on?`background:${ac};border-color:${ac}`:''}">
+      ${on?"✓":""}</div>`:""}
+    <div style="flex:1;min-width:0">
+      <div class="ex-name">${ex.name}${ex.dw?`<span class="ex-dw">/ ${ex.dw}кг</span>`:""}</div>
+      ${on&&prevT?`<div class="ex-prev">← ${prevT}</div>`:""}
+    </div>
+  </div>
+  ${on?`<div class="ex-body">
+    ${sets.map((s,i)=>`<div class="set-row">
+      <span class="set-num" style="color:${ac}">${i+1}</span>
+      <input class="si" type="number" step="0.5" placeholder="кг"
+        value="${s.w}" data-ei="${ex.id}" data-i="${i}" data-f="w"/>
+      <span class="sx">×</span>
+      <input class="si si2" type="number" placeholder="повт"
+        value="${s.r}" data-ei="${ex.id}" data-i="${i}" data-f="r"/>
+      <button class="sdel" data-dl="${ex.id}" data-i="${i}">✕</button>
+    </div>`).join("")}
+    ${!sets.length?`<div style="font-size:10px;color:#252525;margin-bottom:5px">нет подходов</div>`:""}
+    <button class="add-btn" data-as="${ex.id}">+ подход</button>
+  </div>`:""}
+</div>`;
+}
+
+function rCardio(ac){
+  const d=S.session.cardio||{machine:"stepper",minutes:""};
+  const p=S.prevSession.cardio;
+  return`<div class="cardio-wrap">
+  ${p?.minutes?`<div style="font-size:10px;color:#444;margin-bottom:14px">← прошлый: ${p.machine==="ellipse"?"Эллипс":"Степпер"} ${p.minutes} мин</div>`:""}
+  <div class="c-label">ТРЕНАЖЁР</div>
+  <div class="machine-grid">
+    <button class="m-btn" data-mc="stepper" style="${d.machine==="stepper"?`background:${ac};border-color:${ac};color:#000`:''}">🪜 Степпер</button>
+    <button class="m-btn" data-mc="ellipse" style="${d.machine==="ellipse"?`background:${ac};border-color:${ac};color:#000`:''}">〰️ Эллипс</button>
+  </div>
+  <div class="c-label">ВРЕМЯ (МИН)</div>
+  <input type="number" class="min-input" id="cm" placeholder="45"
+    value="${d.minutes||''}" style="color:${ac}"/>
+  <div class="c-goal">Цель: 180 мин/нед</div>
+</div>`;
+}
+
+function rHist(){
+  const keys=DB.keys("wd3:").sort().reverse().slice(0,60);
+  const entries=keys.map(k=>{const v=DB.get(k);if(!v)return null;const p=k.split(":");return{key:k,date:p[1],wType:p[2],...v};}).filter(Boolean);
+  return`<div class="page"><div class="container">
+<div class="hist-head-row">
+  <button class="hist-btn" id="bb">← назад</button>
+  <span class="title" style="font-size:18px">История</span>
+</div>
+${!entries.length?`<div style="color:#2a2a2a;text-align:center;margin-top:60px">Нет записей</div>`:
+entries.map(e=>{
+  const w=W[e.wType];if(!w)return"";
+  let vol=0;
+  if(e.wType!=="cardio") w.groups.forEach(g=>g.ex.forEach(ex=>{
+    if(g.rot&&!e.enabled?.[ex.id])return;
+    (e.session?.[ex.id]?.sets||[]).forEach(s=>{vol+=(parseFloat(s.w)||0)*(parseInt(s.r)||0);});
+  }));
+  return`<div class="hist-entry" style="border-left:3px solid ${w.color}">
+  <div class="h-top">
+    <div><span class="h-wt" style="color:${w.color}">${w.label}</span><span class="h-date">${e.date}</span></div>
+    <span class="h-vol">${e.wType==="cardio"?(e.session?.cardio?.minutes?e.session.cardio.minutes+" мин":"—"):vol?vol+" кг":"—"}</span>
+  </div>
+  ${e.wType!=="cardio"?w.groups.map(g=>g.ex.map(ex=>{
+    if(g.rot&&!e.enabled?.[ex.id])return"";
+    const sets=e.session?.[ex.id]?.sets||[];
+    if(!sets.length)return"";
+    return`<div class="h-ex"><span>${ex.name}:</span> ${sets.map(s=>`${s.w||"—"}×${s.r}`).join("  ")}</div>`;
+  }).join("")).join(""):`<div class="h-ex"><span>${e.session?.cardio?.machine==="ellipse"?"Эллипс":"Степпер"}</span> ${e.session?.cardio?.minutes||"—"} мин</div>`}
+</div>`}).join("")}
+</div><div style="height:70px"></div></div>`;
+}
+
+// ── BIND ───────────────────────────────────────────
+function bind(){
+  document.getElementById("bh")?.addEventListener("click",()=>{S.view="hist";render();});
+  document.getElementById("bb")?.addEventListener("click",()=>{S.view="main";render();});
+  document.getElementById("bs")?.addEventListener("click",save);
+  document.getElementById("di")?.addEventListener("change",e=>{S.date=e.target.value;load();render();});
+  document.querySelectorAll("[data-wt]").forEach(b=>b.addEventListener("click",()=>{S.wType=b.dataset.wt;load();render();}));
+  document.querySelectorAll("[data-tg]").forEach(el=>el.addEventListener("click",()=>{
+    const id=el.dataset.tg, was=!!S.enabled[id];
+    S.enabled[id]=!was;
+    if(!was&&!S.session[id]?.sets?.length){
+      const ex=findEx(id),dw=ex?.dw??"";
+      S.session[id]={sets:[{w:String(dw),r:"12"},{w:String(dw),r:"12"},{w:String(dw),r:"12"}]};
+    }
+    render();
+  }));
+  document.querySelectorAll("[data-as]").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.as,sets=S.session[id]?.sets||[],last=sets[sets.length-1];
+    const ex=findEx(id),dw=ex?.dw??"";
+    if(!S.session[id])S.session[id]={sets:[]};
+    S.session[id].sets.push({w:last?.w||String(dw),r:last?.r||"12"});
+    render();
+  }));
+  document.querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.dl,i=parseInt(b.dataset.i);
+    S.session[id].sets.splice(i,1);render();
+  }));
+  document.querySelectorAll("[data-ei]").forEach(inp=>inp.addEventListener("input",e=>{
+    const{ei,i,f}=e.target.dataset;
+    if(!S.session[ei])S.session[ei]={sets:[]};
+    if(!S.session[ei].sets[i])S.session[ei].sets[parseInt(i)]={w:"",r:""};
+    S.session[ei].sets[parseInt(i)][f]=e.target.value;
+  }));
+  document.querySelectorAll("[data-mc]").forEach(b=>b.addEventListener("click",()=>{
+    if(!S.session.cardio)S.session.cardio={machine:"stepper",minutes:""};
+    S.session.cardio.machine=b.dataset.mc;render();
+  }));
+  document.getElementById("cm")?.addEventListener("input",e=>{
+    if(!S.session.cardio)S.session.cardio={machine:"stepper",minutes:""};
+    S.session.cardio.minutes=e.target.value;
+  });
+}
+
+load();render();
+</script>
+</body>
+</html>
