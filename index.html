@@ -52,7 +52,8 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.55)}
 .ex-card.on .ex-name{color:#16140f}
 .ex-dw{color:#bdb7aa;font-size:13px;font-weight:600;margin-left:5px}
 .ex-prev{font-size:13px;color:#8f897c;margin-top:3px;font-weight:700}
-.ex-del{background:none;border:none;color:#d0ccc2;cursor:pointer;font-size:16px;padding:0 4px;flex-shrink:0}
+.ex-del{background:none;border:none;color:#cdc7bb;cursor:pointer;font-size:18px;font-weight:700;padding:6px 8px;flex-shrink:0;line-height:1}
+.ex-del:active{color:#dc2626}
 .ex-body{padding:0 14px 13px}
 
 .set-row{display:flex;gap:7px;align-items:center;margin-bottom:7px}
@@ -169,20 +170,47 @@ const DB={
   del(k){try{localStorage.removeItem(k)}catch{}},
   keys(p){try{return Object.keys(localStorage).filter(k=>k.startsWith(p))}catch{return[]}},
 };
+// ключ сессии вида wd3:2026-06-05:legs (с датой), не служебный
+const isSessKey = k => /^wd3:\d{4}-\d{2}-\d{2}:/.test(k);
 
 // ── СВОИ УПРАЖНЕНИЯ ────────────────────────────────
 // {id, wType, groupId, name, dw}
 function loadCustom(){ return DB.get("wd3:custom") || []; }
 function saveCustom(arr){ DB.set("wd3:custom", arr); }
 
-// собирает группы для типа с учётом своих упражнений
+// скрытые (удалённые) встроенные упражнения
+function loadHidden(){ return DB.get("wd3:hidden") || []; }
+function saveHidden(arr){ DB.set("wd3:hidden", arr); }
+
+// свои типы кардио: [{id,name}]
+function loadCardioTypes(){ return DB.get("wd3:cardio_types") || []; }
+function saveCardioTypes(arr){ DB.set("wd3:cardio_types", arr); }
+function cardioLabel(id){
+  if(id==="stepper") return "🪜 Степпер";
+  if(id==="ellipse") return "〰️ Эллипс";
+  const c=loadCardioTypes().find(x=>x.id===id);
+  return c ? c.name : id;
+}
+
+// собирает группы для типа с учётом своих и скрытых упражнений
 function groupsFor(wType){
-  const base = W[wType].groups.map(g=>({...g, ex:[...g.ex]}));
+  const hidden = loadHidden();
+  const base = W[wType].groups.map(g=>({...g, ex:g.ex.filter(e=>!hidden.includes(e.id))}));
   loadCustom().filter(c=>c.wType===wType).forEach(c=>{
     const g = base.find(x=>x.id===c.groupId);
     if(g) g.ex.push({id:c.id, name:c.name, dw:c.dw, custom:true});
   });
   return base;
+}
+
+// начальные подходы: берём прошлую тренировку, иначе дефолт
+function initSetsFor(id){
+  const prev = S.prevSession[id]?.sets;
+  if(prev && prev.length){
+    return prev.map(s=>({w:String(s.w??""), r:String(s.r??"12")}));
+  }
+  const ex=findEx(id), dw=ex?.dw??"";
+  return [{w:String(dw),r:"12"},{w:String(dw),r:"12"},{w:String(dw),r:"12"}];
 }
 
 function findEx(id){
@@ -198,7 +226,7 @@ const S={
   view:"main", wType:"back_chest",
   date:new Date().toISOString().slice(0,10),
   session:{}, enabled:{}, prevSession:{}, prevEnabled:{}, saved:false,
-  addingTo:null,
+  addingTo:null, addingCardio:false,
 };
 
 function sKey(){return`wd3:${S.date}:${S.wType}`}
@@ -207,12 +235,23 @@ function load(){
   const cur=DB.get(sKey());
   if(cur){S.session=cur.session||{};S.enabled=cur.enabled||{};}
   else{S.session={};S.enabled={};}
-  const prevK=DB.keys("wd3:s:").length?null:null; // noop
-  const prev=DB.keys("wd3:").filter(k=>k.includes(`:${S.wType}`)&&k!==sKey()&&!k.endsWith("custom")).sort().reverse();
+  const prev=DB.keys("wd3:").filter(k=>isSessKey(k)&&k.endsWith(":"+S.wType)&&k!==sKey()).sort().reverse();
   if(prev.length){
     const p=DB.get(prev[0]);
     S.prevSession=p?.session||{}; S.prevEnabled=p?.enabled||{};
   } else { S.prevSession={}; S.prevEnabled={}; }
+
+  // авто-подстановка прошлых весов для постоянных (не чередующихся) упражнений
+  if(S.wType!=="cardio"){
+    groupsFor(S.wType).forEach(g=>{
+      if(g.rot) return;
+      g.ex.forEach(e=>{
+        if(!S.session[e.id]?.sets?.length){
+          S.session[e.id]={sets:initSetsFor(e.id)};
+        }
+      });
+    });
+  }
 }
 
 function save(){
@@ -319,7 +358,7 @@ function rEx(ex,rot,ac,dk){
       <div class="ex-name">${ex.name}${ex.dw?`<span class="ex-dw">/ ${ex.dw}кг</span>`:""}${ex.custom?`<span class="ex-dw">· своё</span>`:""}</div>
       ${on&&prevT?`<div class="ex-prev">← ${prevT}</div>`:""}
     </div>
-    ${ex.custom?`<button class="ex-del" data-delex="${ex.id}">🗑</button>`:""}
+    <button class="ex-del" data-delx="${ex.id}" data-cust="${ex.custom?1:0}">✕</button>
   </div>
   ${on?`<div class="ex-body">
     ${sets.map((s,i)=>`<div class="set-row">
@@ -340,13 +379,28 @@ function rEx(ex,rot,ac,dk){
 function rCardio(ac,dk){
   const d=S.session.cardio||{machine:"stepper",minutes:""};
   const p=S.prevSession.cardio;
+  const customTypes=loadCardioTypes();
+  const allBtns=[
+    {id:"stepper",name:"🪜 Степпер",cust:false},
+    {id:"ellipse",name:"〰️ Эллипс",cust:false},
+    ...customTypes.map(c=>({id:c.id,name:c.name,cust:true})),
+  ];
   return`<div class="cardio-wrap">
-  ${p?.minutes?`<div style="font-size:13px;color:#8b8578;margin-bottom:16px;font-weight:700">← прошлый: ${p.machine==="ellipse"?"Эллипс":"Степпер"} ${p.minutes} мин</div>`:""}
+  ${p?.minutes?`<div style="font-size:13px;color:#8b8578;margin-bottom:16px;font-weight:700">← прошлый: ${cardioLabel(p.machine)} ${p.minutes} мин</div>`:""}
   <div class="c-label">ТРЕНАЖЁР</div>
-  <div class="machine-grid">
-    <button class="m-btn" data-mc="stepper" style="${d.machine==="stepper"?`background:${dk};border-color:${dk};color:#fff`:''}">🪜 Степпер</button>
-    <button class="m-btn" data-mc="ellipse" style="${d.machine==="ellipse"?`background:${dk};border-color:${dk};color:#fff`:''}">〰️ Эллипс</button>
+  <div class="machine-grid" style="flex-wrap:wrap">
+    ${allBtns.map(b=>`<div style="position:relative;flex:1;min-width:120px">
+      <button class="m-btn" style="width:100%;${d.machine===b.id?`background:${dk};border-color:${dk};color:#fff`:''}" data-mc="${b.id}">${b.name}</button>
+      ${b.cust?`<button data-delcardio="${b.id}" style="position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;font-weight:800;cursor:pointer;line-height:1">✕</button>`:""}
+    </div>`).join("")}
   </div>
+  ${S.addingCardio?`<div class="add-form">
+    <input id="ac-name" placeholder="Название тренажёра (напр. Дорожка)"/>
+    <div class="row">
+      <button style="background:${dk};color:#fff" data-accardio="1">Добавить</button>
+      <button style="background:#f0eee8;color:#6b6557" data-accancel="1">Отмена</button>
+    </div>
+  </div>`:`<button class="add-ex-btn" id="ac-open" style="margin-bottom:22px">+ свой тренажёр</button>`}
   <div class="c-label">ВРЕМЯ (МИН)</div>
   <input type="number" class="min-input" id="cm" placeholder="45"
     value="${d.minutes||''}" style="color:${dk}"/>
@@ -356,7 +410,7 @@ function rCardio(ac,dk){
 
 // ── ГРАФИКИ ────────────────────────────────────────
 function seriesFor(wType){
-  const keys=DB.keys("wd3:").filter(k=>k.includes(`:${wType}`)&&!k.endsWith("custom")).sort();
+  const keys=DB.keys("wd3:").filter(k=>isSessKey(k)&&k.endsWith(":"+wType)).sort();
   return keys.map(k=>{
     const v=DB.get(k); if(!v) return null;
     const date=k.split(":")[1];
@@ -409,7 +463,7 @@ ${types.map(t=>{
 
 // ── ИСТОРИЯ ────────────────────────────────────────
 function rHist(){
-  const keys=DB.keys("wd3:").filter(k=>!k.endsWith("custom")).sort().reverse().slice(0,80);
+  const keys=DB.keys("wd3:").filter(isSessKey).sort().reverse().slice(0,80);
   const entries=keys.map(k=>{const v=DB.get(k);if(!v)return null;const p=k.split(":");return{key:k,date:p[1],wType:p[2],...v};}).filter(Boolean);
   return`<div class="page"><div class="container">
 <div class="back-row"><button class="back-btn" id="bb">← назад</button>
@@ -428,7 +482,7 @@ entries.map(e=>{
     const sets=e.session?.[ex.id]?.sets||[];
     if(!sets.length)return"";
     return`<div class="h-ex"><span>${ex.name}:</span> ${sets.map(s=>`${s.w||"—"}×${s.r}`).join("  ")}</div>`;
-  }).join("")).join(""):`<div class="h-ex"><span>${e.session?.cardio?.machine==="ellipse"?"Эллипс":"Степпер"}</span> ${e.session?.cardio?.minutes||"—"} мин</div>`}
+  }).join("")).join(""):`<div class="h-ex"><span>${cardioLabel(e.session?.cardio?.machine)}</span> ${e.session?.cardio?.minutes||"—"} мин</div>`}
 </div>`}).join("")}
 <div style="height:30px"></div>
 </div></div>`;
@@ -448,18 +502,27 @@ function rData(){
 
 <div class="data-card">
   <div class="data-title">📤 Экспорт</div>
-  <div class="data-desc">Сохрани все тренировки в файл. Пригодится для резервной копии или переноса на другое устройство.</div>
-  <button class="data-btn" style="background:#0891b2" id="exp-file">Скачать файл</button>
+  <div class="data-desc">Сохрани все тренировки в текстовый файл (.txt). Пригодится для резервной копии или переноса на другое устройство.</div>
+  <button class="data-btn" style="background:#0891b2" id="exp-file">Скачать файл (.txt)</button>
   <button class="data-btn sec" id="exp-copy">Скопировать текст</button>
 </div>
 
 <div class="data-card">
   <div class="data-title">📥 Импорт</div>
-  <div class="data-desc">Загрузи ранее сохранённый файл, либо вставь скопированный текст и нажми «Импортировать».</div>
-  <input type="file" accept=".json,application/json" id="imp-file" style="margin-bottom:12px;font-size:13px;width:100%"/>
+  <div class="data-desc">Загрузи ранее сохранённый файл (.txt), либо вставь скопированный текст и нажми «Импортировать».</div>
+  <input type="file" accept=".txt,.json,text/plain,application/json" id="imp-file" style="margin-bottom:12px;font-size:13px;width:100%"/>
   <textarea class="data-area" id="imp-area" placeholder="…или вставь текст сюда"></textarea>
   <button class="data-btn" style="background:#15803d" id="imp-text">Импортировать из текста</button>
 </div>
+${(()=>{
+  const hidden=loadHidden();
+  if(!hidden.length) return "";
+  return `<div class="data-card">
+    <div class="data-title">↩️ Удалённые упражнения</div>
+    <div class="data-desc">Эти встроенные упражнения скрыты. Нажми, чтобы вернуть в список.</div>
+    ${hidden.map(id=>{const ex=findEx(id);return `<button class="data-btn sec" data-restore="${id}" style="text-align:left">↩ ${ex?.name||id}</button>`;}).join("")}
+  </div>`;
+})()}
 <div style="height:30px"></div>
 </div></div>`;
 }
@@ -494,8 +557,7 @@ function bind(){
     const id=el.dataset.tg, was=!!S.enabled[id];
     S.enabled[id]=!was;
     if(!was&&!S.session[id]?.sets?.length){
-      const ex=findEx(id),dw=ex?.dw??"";
-      S.session[id]={sets:[{w:String(dw),r:"12"},{w:String(dw),r:"12"},{w:String(dw),r:"12"}]};
+      S.session[id]={sets:initSetsFor(id)};
     }
     render();
   }));
@@ -520,6 +582,24 @@ function bind(){
     if(!S.session.cardio)S.session.cardio={machine:"stepper",minutes:""};
     S.session.cardio.machine=b.dataset.mc;render();
   }));
+  document.getElementById("ac-open")?.addEventListener("click",()=>{S.addingCardio=true;render();});
+  document.querySelector("[data-accancel]")?.addEventListener("click",()=>{S.addingCardio=false;render();});
+  document.querySelector("[data-accardio]")?.addEventListener("click",()=>{
+    const name=document.getElementById("ac-name").value.trim();
+    if(!name){alert("Введи название");return;}
+    const arr=loadCardioTypes();
+    arr.push({id:"cardio_"+Date.now(), name});
+    saveCardioTypes(arr);
+    S.addingCardio=false;render();
+  });
+  document.querySelectorAll("[data-delcardio]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation();
+    const id=b.dataset.delcardio;
+    if(!confirm("Удалить этот тренажёр?"))return;
+    saveCardioTypes(loadCardioTypes().filter(c=>c.id!==id));
+    if(S.session.cardio?.machine===id) S.session.cardio.machine="stepper";
+    render();
+  }));
   document.getElementById("cm")?.addEventListener("input",e=>{
     if(!S.session.cardio)S.session.cardio={machine:"stepper",minutes:""};
     S.session.cardio.minutes=e.target.value;
@@ -540,20 +620,32 @@ function bind(){
     saveCustom(arr);
     S.addingTo=null;render();
   });
-  document.querySelectorAll("[data-delex]").forEach(b=>b.addEventListener("click",()=>{
-    if(!confirm("Удалить это упражнение из списка?"))return;
-    const id=b.dataset.delex;
-    saveCustom(loadCustom().filter(c=>c.id!==id));
+  document.querySelectorAll("[data-delx]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation();
+    const id=b.dataset.delx, isCust=b.dataset.cust==="1";
+    const ex=findEx(id);
+    if(!confirm(`Удалить «${ex?.name||"упражнение"}» из списка?`))return;
+    if(isCust){
+      saveCustom(loadCustom().filter(c=>c.id!==id));
+    } else {
+      const h=loadHidden(); if(!h.includes(id)){h.push(id);saveHidden(h);}
+    }
     delete S.session[id]; delete S.enabled[id];
+    render();
+  }));
+
+  document.querySelectorAll("[data-restore]").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.restore;
+    saveHidden(loadHidden().filter(x=>x!==id));
     render();
   }));
 
   // данные
   document.getElementById("exp-file")?.addEventListener("click",()=>{
-    const blob=new Blob([exportData()],{type:"application/json"});
+    const blob=new Blob([exportData()],{type:"text/plain"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
-    a.href=url; a.download=`workout-${S.date}.json`;
+    a.href=url; a.download=`workout-${S.date}.txt`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
