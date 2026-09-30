@@ -142,7 +142,7 @@ const W = {
       {id:"pyramid_lat",name:"Пирамида гантели 8→14",  dw:null},
       {id:"rear_delt",  name:"Задн. дельта бабочка",   dw:60},
     ]},
-    {id:"arms",name:"БИЦЕПС · ТРИЦЕПС",rot:false,ex:[
+    {id:"arms",name:"БИЦЕПС · ТРИЦЕПС",rot:true,ex:[
       {id:"inc_curl",   name:"Бицепс на наклонной",    dw:16},
       {id:"scott",      name:"Бицепс в скотте",        dw:60},
       {id:"fr_press",   name:"Французский жим",        dw:16},
@@ -151,7 +151,7 @@ const W = {
     ]},
   ]},
   legs:{label:"Ноги",short:"НГ",sub:"Ноги",color:"#dc2626",dark:"#991b1b",groups:[
-    {id:"legs",name:"НОГИ",rot:false,ex:[
+    {id:"legs",name:"НОГИ",rot:true,ex:[
       {id:"lunge",   name:"Выпады",         dw:22.5},
       {id:"goblet",  name:"Присед с гирей", dw:20},
       {id:"rdl",     name:"Румынская тяга", dw:90},
@@ -203,11 +203,25 @@ function groupsFor(wType){
   return base;
 }
 
-// начальные подходы: берём прошлую тренировку, иначе дефолт
+// ищет последнюю тренировку (по всей истории), где это упражнение реально делалось
+// возвращает {sets, date} или null. Не учитывает текущий открытый день.
+function lastPerformed(id){
+  const keys=DB.keys("wd3:").filter(k=>isSessKey(k)&&k.endsWith(":"+S.wType)&&k!==sKey()).sort().reverse();
+  for(const k of keys){
+    const v=DB.get(k);
+    const sets=v?.session?.[id]?.sets;
+    if(sets && sets.length && sets.some(s=>String(s.w).trim()!=="")){
+      return {sets, date:k.split(":")[1]};
+    }
+  }
+  return null;
+}
+
+// начальные подходы: берём последнюю тренировку, где упражнение делалось, иначе дефолт
 function initSetsFor(id){
-  const prev = S.prevSession[id]?.sets;
-  if(prev && prev.length){
-    return prev.map(s=>({w:String(s.w??""), r:String(s.r??"12")}));
+  const last=lastPerformed(id);
+  if(last){
+    return last.sets.map(s=>({w:String(s.w??""), r:String(s.r??"12")}));
   }
   const ex=findEx(id), dw=ex?.dw??"";
   return [{w:String(dw),r:"12"},{w:String(dw),r:"12"},{w:String(dw),r:"12"}];
@@ -348,15 +362,15 @@ function rGroup(g,ac,dk){
 function rEx(ex,rot,ac,dk){
   const on=rot?!!S.enabled[ex.id]:true;
   const sets=S.session[ex.id]?.sets||[];
-  const prev=(S.prevSession[ex.id]?.sets||[]);
-  const prevT=prev.length?prev.map(s=>`${s.w||"—"}×${s.r}`).join("  "):null;
+  const last=lastPerformed(ex.id);
+  const prevT=last?last.sets.map(s=>`${s.w||"—"}×${s.r}`).join("  "):null;
   return`<div class="ex-card${on?" on":""}">
   <div class="ex-header"${rot?` data-tg="${ex.id}" style="cursor:pointer"`:""}>
     ${rot?`<div class="ex-check" style="${on?`background:${ac};border-color:${ac}`:''}">
       ${on?"✓":""}</div>`:""}
     <div style="flex:1;min-width:0">
       <div class="ex-name">${ex.name}${ex.dw?`<span class="ex-dw">/ ${ex.dw}кг</span>`:""}${ex.custom?`<span class="ex-dw">· своё</span>`:""}</div>
-      ${on&&prevT?`<div class="ex-prev">← ${prevT}</div>`:""}
+      ${prevT?`<div class="ex-prev">← ${last.date.slice(5).replace("-","/")}: ${prevT}</div>`:""}
     </div>
     <button class="ex-del" data-delx="${ex.id}" data-cust="${ex.custom?1:0}">✕</button>
   </div>
@@ -421,23 +435,32 @@ function seriesFor(wType){
   }).filter(Boolean);
 }
 
-function barChart(points, color, dark, unit){
+// формат значения: тоннаж (кг) -> тысячи с десятой (14367 -> "14.4"); минуты -> целое
+function fmtVal(val, isKg){
+  if(isKg) return (val/1000).toFixed(1);
+  return String(val);
+}
+
+function barChart(points, color, dark, isKg){
   if(!points.length) return `<div class="chart-empty">Нет данных — сохрани хотя бы одну тренировку</div>`;
-  const pts=points.slice(-12);
+  const pts=points.slice(-20); // максимум 20 столбцов
   const max=Math.max(...pts.map(p=>p.val));
-  // topPad — место для подписи значения над столбцом; botPad — для даты
-  const W=320,H=140,pad=4,topPad=22,botPad=20,bw=(W-pad*2)/pts.length;
+  const W=340,H=150,pad=6,topPad=20,botPad=34,bw=(W-pad*2)/pts.length;
   const plotH=H-topPad-botPad;
+  const small=pts.length>10; // мелкий шрифт значений при большом кол-ве столбцов
   const bars=pts.map((p,i)=>{
     const h=max>0?(p.val/max)*plotH:0;
     const x=pad+i*bw, y=topPad+(plotH-h);
     const isLast=i===pts.length-1;
-    return `<rect x="${x+bw*0.15}" y="${y}" width="${bw*0.7}" height="${h}" rx="3"
+    const cx=x+bw/2;
+    const dateStr=p.date.slice(5).replace("-","/"); // 06-04 -> 06/04
+    return `<rect x="${x+bw*0.14}" y="${y}" width="${bw*0.72}" height="${h}" rx="2.5"
       fill="${isLast?dark:color}" opacity="${isLast?1:0.55}"/>
-      <text x="${x+bw/2}" y="${y-5}" font-size="11" font-weight="700" fill="${isLast?dark:'#9a948a'}" text-anchor="middle" font-family="monospace">${p.val}</text>
-      <text x="${x+bw/2}" y="${H-5}" font-size="9" fill="#9a948a" text-anchor="middle" font-family="monospace">${p.date.slice(5)}</text>`;
+      <text x="${cx}" y="${y-4}" font-size="${small?9:11}" font-weight="700" fill="${isLast?dark:'#8b857a'}" text-anchor="middle" font-family="monospace">${fmtVal(p.val,isKg)}</text>
+      <text x="${cx}" y="${H-8}" font-size="8.5" fill="#9a948a" text-anchor="end" font-family="monospace" transform="rotate(-45 ${cx} ${H-8})">${dateStr}</text>`;
   }).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">${bars}</svg>`;
+  const axisNote=isKg?`<text x="${pad}" y="11" font-size="8" fill="#b3ada1" font-family="monospace">тыс. кг</text>`:``;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">${axisNote}${bars}</svg>`;
 }
 
 function rChart(){
@@ -448,13 +471,14 @@ function rChart(){
 ${types.map(t=>{
   const w=W[t], pts=seriesFor(t);
   const last=pts.length?pts[pts.length-1].val:0;
-  const unit=t==="cardio"?"мин":"кг";
+  const isKg=t!=="cardio";
+  const unit=isKg?"кг":"мин";
   return`<div class="chart-card">
     <div class="chart-head">
       <span class="chart-title" style="color:${w.dark}">${w.label}</span>
       ${last?`<span class="chart-last" style="color:${w.dark}">${last} ${unit}</span>`:""}
     </div>
-    ${barChart(pts,w.color,w.dark,unit)}
+    ${barChart(pts,w.color,w.dark,isKg)}
   </div>`;
 }).join("")}
 <div style="height:30px"></div>
@@ -678,4 +702,3 @@ load();render();
 </script>
 </body>
 </html>
-
